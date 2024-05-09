@@ -28,7 +28,7 @@ class HelpDesk:
 
     def get_template(self):
         template = """
-        Given this text extracts:
+        You're a confluence assistant. Given this text extracts:
         -----
         {context}
         -----
