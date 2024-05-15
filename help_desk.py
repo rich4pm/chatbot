@@ -5,13 +5,13 @@ from langchain.llms import OpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.embeddings import OpenAIEmbeddings
-
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
 
 class HelpDesk:
     """Create the necessary objects to create a QARetrieval chain"""
 
     def __init__(self, new_db=True):
-
         self.new_db = new_db
         self.template = self.get_template()
         self.embeddings = self.get_embeddings()
@@ -19,20 +19,25 @@ class HelpDesk:
         self.prompt = self.get_prompt()
 
         if self.new_db:
+            print("Setting up a new database...")
             self.db = load_db.DataLoader().set_db(self.embeddings)
         else:
+            print("Loading existing database...")
             self.db = load_db.DataLoader().get_db(self.embeddings)
 
         self.retriever = self.db.as_retriever()
         self.retrieval_qa_chain = self.get_retrieval_qa()
 
+        # Initialize the SentenceTransformer model for relevance checking
+        self.similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+
     def get_template(self):
         template = """
-        You're a confluence assistant. Given this text extracts:
+        Given this text extracts:
         -----
         {context}
         -----
-        Please answer with to the following question:
+        Please answer with the following question:
         Question: {question}
         Helpful Answer:
         """
@@ -65,13 +70,31 @@ class HelpDesk:
 
     def retrieval_qa_inference(self, question, verbose=True):
         query = {"query": question}
+        print(f"Querying with question: {question}")
         answer = self.retrieval_qa_chain(query)
+
+        # Evaluate relevance of the answer
+        if not self.is_relevant_answer(question, answer["source_documents"]):
+            return "Sorry, I couldn't find any relevant information to answer your question.", []
+
         sources = self.list_top_k_sources(answer, k=2)
 
         if verbose:
-            print(sources)
+            print(f"Sources: {sources}")
 
         return answer["result"], sources
+
+    def is_relevant_answer(self, query, source_documents, threshold=0.4):
+        print(f"Evaluating relevance of the documents...")
+        query_embedding = self.similarity_model.encode(query, convert_to_tensor=True)
+        doc_embeddings = [self.similarity_model.encode(doc.page_content, convert_to_tensor=True) for doc in source_documents]
+        
+        # Compute cosine similarities
+        similarities = [util.pytorch_cos_sim(query_embedding, doc_embedding).item() for doc_embedding in doc_embeddings]
+        
+        print(f"Similarities: {similarities}")
+        # Check if any similarity score meets the threshold
+        return any(score >= threshold for score in similarities)
 
     def list_top_k_sources(self, answer, k=2):
         sources = [
@@ -81,16 +104,13 @@ class HelpDesk:
 
         if sources:
             k = min(k, len(sources))
-            distinct_sources = list(zip(*collections.Counter(sources).most_common()))[
-                0
-            ][:k]
+            distinct_sources = list(zip(*collections.Counter(sources).most_common()))[0][:k]
             distinct_sources_str = "  \n- ".join(distinct_sources)
 
-        if len(distinct_sources) == 1:
-            return f"Here is the source that might be useful to you: \n- {distinct_sources_str}"
+            if len(distinct_sources) == 1:
+                return f"Here is the source that might be useful to you: \n- {distinct_sources_str}"
 
-        elif len(distinct_sources) > 1:
-            return f"Here is {len(distinct_sources)} sources that might be useful to you: \n- {distinct_sources_str}"
+            elif len(distinct_sources) > 1:
+                return f"Here are {len(distinct_sources)} sources that might be useful to you: \n- {distinct_sources_str}"
 
-        else:
-            return "Sorry I couldn't find any resources to answer your question."
+        return "Sorry, I couldn't find any resources to answer your question."

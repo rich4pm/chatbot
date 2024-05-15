@@ -1,47 +1,48 @@
-# Streamlit
-# Use QARetrieval to find informations about the Octo Confluence
-# Basic example with a improvementd:
-# Add streaming
-# Add Conversation history
-# Optimize Splitter, Retriever,
-# Try Open source models
 import streamlit as st
 from help_desk import HelpDesk
 from streamlit_extras.app_logo import add_logo
 
-add_logo = "xpeng.svg"
-st.image(add_logo, width=150)
+# Add logo to the app
+logo_path = "xpeng.svg"
+st.image(logo_path, width=150)
 
-st.title("Ask Xpeng chatbot")
+st.title("Ask Xpeng Chatbot")
 
 @st.cache_resource
 def get_model():
     model = HelpDesk(new_db=True)
     return model
 
-
 model = get_model()
 
-# Streamlit
+# Initialize conversation history
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "How can I help you?"}
     ]
 
+# Display previous messages
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-
-if prompt := st.chat_input("How can I help you??"):
-    # Add prompt
+# Handle user input
+if prompt := st.chat_input("How can I help you?"):
+    # Add user's prompt to the conversation
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
 
-    # Get answer
+    # Get answer from the model
+    print(f"Received user prompt: {prompt}")
     result, sources = model.retrieval_qa_inference(prompt)
+    print(f"Result: {result}")
+    print(f"Sources: {sources}")
 
-    # Add answer and sources
-    st.chat_message("assistant").write(result + "  \n  \n" + sources)
-    st.session_state.messages.append(
-        {"role": "assistant", "content": result + "  \n  \n" + sources}
-    )
+    # Prepare the assistant's response
+    if sources:
+        response = f"{result}\n\n{sources}"
+    else:
+        response = "Sorry, I couldn't find any relevant information to answer your question."
+
+    # Add the assistant's response to the conversation
+    st.chat_message("assistant").write(response)
+    st.session_state.messages.append({"role": "assistant", "content": response})
